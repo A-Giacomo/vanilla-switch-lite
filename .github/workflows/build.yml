@@ -12,6 +12,7 @@ permissions:
 jobs:
   build-ios:
     name: Build iOS
+    if: false # Fork: only the Nintendo Switch image is needed
     runs-on: macos-15
     steps:
     - uses: actions/checkout@v4
@@ -54,6 +55,7 @@ jobs:
 
   build-macos:
     name: Build macOS
+    if: false # Fork: only the Nintendo Switch image is needed
     runs-on: macos-15
     steps:
     - uses: actions/checkout@v4
@@ -204,30 +206,6 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - os: linux
-            arch: x86_64
-            artifact: vanilla-linux-x86_64.tar.gz
-          - os: linux
-            arch: aarch64
-            artifact: vanilla-linux-aarch64.tar.gz
-          - os: windows
-            arch: x86_64
-            artifact: vanilla-windows-x86_64.zip
-          - os: android
-            arch: universal
-            artifact: vanilla-android-universal.apk
-          - os: raspberrypi0w
-            arch: armv6l
-            artifact: vanilla-raspberrypi0w-image.zip
-          - os: raspberrypi64
-            arch: aarch64
-            artifact: vanilla-raspberrypi64-image.zip
-          - os: orangepi_zero2w
-            arch: aarch64
-            artifact: vanilla-orangepi_zero2w-image.zip
-          - os: orangepi_zero3
-            arch: aarch64
-            artifact: vanilla-orangepi_zero3-image.zip
           - os: nintendoswitch
             arch: aarch64
             artifact: vanilla-nintendoswitch-image.zip
