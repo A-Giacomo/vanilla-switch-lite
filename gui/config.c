@@ -81,8 +81,11 @@ void vpi_config_save()
     sprintf(buf, "%i", vpi_config.region);
     xmlTextWriterWriteElement(writer, BAD_CAST "region", BAD_CAST buf);
 
-    sprintf(buf, "%i", vpi_config.swap_abxy);
-    xmlTextWriterWriteElement(writer, BAD_CAST "swapabxy", BAD_CAST buf);
+    sprintf(buf, "%i", vpi_config.swap_ab);
+    xmlTextWriterWriteElement(writer, BAD_CAST "swapab", BAD_CAST buf);
+
+    sprintf(buf, "%i", vpi_config.swap_xy);
+    xmlTextWriterWriteElement(writer, BAD_CAST "swapxy", BAD_CAST buf);
 
     sprintf(buf, "%i", vpi_config.fullscreen);
     xmlTextWriterWriteElement(writer, BAD_CAST "fullscreen", BAD_CAST buf);
@@ -247,7 +250,12 @@ void vpi_config_init()
                     } else if (!strcmp((const char *) child->name, "region")) {
                         vpi_config.region = atoi((const char *) child->children->content);
                     } else if (!strcmp((const char *) child->name, "swapabxy")) {
-                        vpi_config.swap_abxy = atoi((const char *) child->children->content);
+                        // Legacy setting that swapped both pairs at once
+                        vpi_config.swap_ab = vpi_config.swap_xy = atoi((const char *) child->children->content);
+                    } else if (!strcmp((const char *) child->name, "swapab")) {
+                        vpi_config.swap_ab = atoi((const char *) child->children->content);
+                    } else if (!strcmp((const char *) child->name, "swapxy")) {
+                        vpi_config.swap_xy = atoi((const char *) child->children->content);
                     } else if (!strcmp((const char *) child->name, "fastdrm")) {
                         vpi_config.fast_drm = atoi((const char *) child->children->content);
                     } else if (!strcmp((const char *) child->name, "fullscreen")) {

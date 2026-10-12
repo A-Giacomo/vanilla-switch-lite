@@ -318,6 +318,17 @@ void find_valid_controller(vui_sdl_context_t *sdl_ctx)
             } else {
                 vpilog("Using game controller \"%s\"\n", ctrl_name);
             }
+
+            // Log the GUID and the SDL mapping in use, which makes it much easier to
+            // diagnose controllers whose face buttons come through in the wrong order
+            char c_guid_str[64];
+            SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(SDL_GameControllerGetJoystick(c)), c_guid_str, sizeof(c_guid_str));
+            char *c_mapping = SDL_GameControllerMapping(c);
+            vpilog("  GUID: %s\n", c_guid_str);
+            vpilog("  Mapping: %s\n", c_mapping ? c_mapping : "(none)");
+            if (c_mapping) {
+                SDL_free(c_mapping);
+            }
         }
     }
 
@@ -648,14 +659,14 @@ int vui_sdl_event_thread(void *data)
                                 vpi_menu_action(vui, (vpi_extra_action_t) vanilla_btn);
                             }
                         } else {
-                            // Handle ABXY swap
-                            if (vpi_config.swap_abxy) {
-                                switch (vanilla_btn) {
-                                case VANILLA_BTN_A: vanilla_btn = VANILLA_BTN_B; break;
-                                case VANILLA_BTN_B: vanilla_btn = VANILLA_BTN_A; break;
-                                case VANILLA_BTN_X: vanilla_btn = VANILLA_BTN_Y; break;
-                                case VANILLA_BTN_Y: vanilla_btn = VANILLA_BTN_X; break;
-                                }
+                            // Handle A/B and X/Y swaps (independently configurable, since some
+                            // controllers such as the Switch Lite's built-in gamepad only have
+                            // one of the two pairs flipped)
+                            switch (vanilla_btn) {
+                            case VANILLA_BTN_A: if (vpi_config.swap_ab) vanilla_btn = VANILLA_BTN_B; break;
+                            case VANILLA_BTN_B: if (vpi_config.swap_ab) vanilla_btn = VANILLA_BTN_A; break;
+                            case VANILLA_BTN_X: if (vpi_config.swap_xy) vanilla_btn = VANILLA_BTN_Y; break;
+                            case VANILLA_BTN_Y: if (vpi_config.swap_xy) vanilla_btn = VANILLA_BTN_X; break;
                             }
 
                             if (vui->game_mode) {

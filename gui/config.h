@@ -24,7 +24,8 @@ typedef struct {
     char recording_dir[1024];
     int connection_setup;
     int region;
-    int swap_abxy;
+    int swap_ab;
+    int swap_xy;
     int keymap[VPI_CONFIG_KEYMAP_SIZE];
     int buttonmap[VPI_CONFIG_BUTTONMAP_SIZE];
     int axismap[VPI_CONFIG_AXISMAP_SIZE];

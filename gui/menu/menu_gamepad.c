@@ -39,12 +39,20 @@ static void return_to_settings(vui_context_t *vui, int btn, void *v)
     vui_transition_fade_layer_out(vui, layer, vpi_menu_settings, 0);
 }
 
-void vpi_menu_toggle_swap_abxy(vui_context_t *vui, int btn, void *v)
+void vpi_menu_toggle_swap_ab(vui_context_t *vui, int btn, void *v)
 {
-    vpi_config.swap_abxy = !vpi_config.swap_abxy;
+    vpi_config.swap_ab = !vpi_config.swap_ab;
     vpi_config_save();
 
-    vui_button_update_checked(vui, btn, vpi_config.swap_abxy);
+    vui_button_update_checked(vui, btn, vpi_config.swap_ab);
+}
+
+void vpi_menu_toggle_swap_xy(vui_context_t *vui, int btn, void *v)
+{
+    vpi_config.swap_xy = !vpi_config.swap_xy;
+    vpi_config_save();
+
+    vui_button_update_checked(vui, btn, vpi_config.swap_xy);
 }
 
 static int find_current_keybind(vui_context_t *ctx, int btn)
@@ -274,11 +282,15 @@ void vpi_menu_gamepad(vui_context_t *vui, void *v)
     int list_item_width = SCREEN_WIDTH - BTN_SZ - BTN_SZ;
     int list_item_height = (SCREEN_HEIGHT - BTN_SZ - BTN_SZ) / MAIN_MENU_ENTRIES;
 
-    int swap_abxy_button = vui_button_create(vui, BTN_SZ, BTN_SZ + list_item_height * 0, list_item_width, list_item_height, lang(VPI_LANG_SWAP_ABXY_BUTTONS), NULL, VUI_BUTTON_STYLE_LIST, layer, vpi_menu_toggle_swap_abxy, 0);
-    vui_button_update_checkable(vui, swap_abxy_button, 1);
-    vui_button_update_checked(vui, swap_abxy_button, vpi_config.swap_abxy);
+    int swap_ab_button = vui_button_create(vui, BTN_SZ, BTN_SZ + list_item_height * 0, list_item_width, list_item_height, lang(VPI_LANG_SWAP_AB_BUTTONS), NULL, VUI_BUTTON_STYLE_LIST, layer, vpi_menu_toggle_swap_ab, 0);
+    vui_button_update_checkable(vui, swap_ab_button, 1);
+    vui_button_update_checked(vui, swap_ab_button, vpi_config.swap_ab);
 
-    int keyboard_bind_button = vui_button_create(vui, BTN_SZ, BTN_SZ + list_item_height * 1, list_item_width, list_item_height, lang(VPI_LANG_KEYBOARD_CONTROLS), NULL, VUI_BUTTON_STYLE_LIST, layer, transition_to_keybinds, (void *)(intptr_t)layer);
+    int swap_xy_button = vui_button_create(vui, BTN_SZ, BTN_SZ + list_item_height * 1, list_item_width, list_item_height, lang(VPI_LANG_SWAP_XY_BUTTONS), NULL, VUI_BUTTON_STYLE_LIST, layer, vpi_menu_toggle_swap_xy, 0);
+    vui_button_update_checkable(vui, swap_xy_button, 1);
+    vui_button_update_checked(vui, swap_xy_button, vpi_config.swap_xy);
+
+    int keyboard_bind_button = vui_button_create(vui, BTN_SZ, BTN_SZ + list_item_height * 2, list_item_width, list_item_height, lang(VPI_LANG_KEYBOARD_CONTROLS), NULL, VUI_BUTTON_STYLE_LIST, layer, transition_to_keybinds, (void *)(intptr_t)layer);
 
     // Back button
     vpi_menu_create_back_button(vui, layer, return_to_settings, (void *) (intptr_t) layer);
