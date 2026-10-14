@@ -9,7 +9,7 @@
 #include "ui/ui_keyboard.h"
 #include "lib/vanilla.h"
 
-#define MAIN_MENU_ENTRIES 3
+#define MAIN_MENU_ENTRIES 4
 
 static const uint32_t gICON_COLOUR = 0x222222;
 
@@ -53,6 +53,14 @@ void vpi_menu_toggle_swap_xy(vui_context_t *vui, int btn, void *v)
     vpi_config_save();
 
     vui_button_update_checked(vui, btn, vpi_config.swap_xy);
+}
+
+void vpi_menu_toggle_tv_as_blow(vui_context_t *vui, int btn, void *v)
+{
+    vpi_config.tv_as_blow = !vpi_config.tv_as_blow;
+    vpi_config_save();
+
+    vui_button_update_checked(vui, btn, vpi_config.tv_as_blow);
 }
 
 static int find_current_keybind(vui_context_t *ctx, int btn)
@@ -290,7 +298,11 @@ void vpi_menu_gamepad(vui_context_t *vui, void *v)
     vui_button_update_checkable(vui, swap_xy_button, 1);
     vui_button_update_checked(vui, swap_xy_button, vpi_config.swap_xy);
 
-    int keyboard_bind_button = vui_button_create(vui, BTN_SZ, BTN_SZ + list_item_height * 2, list_item_width, list_item_height, lang(VPI_LANG_KEYBOARD_CONTROLS), NULL, VUI_BUTTON_STYLE_LIST, layer, transition_to_keybinds, (void *)(intptr_t)layer);
+    int tv_blow_button = vui_button_create(vui, BTN_SZ, BTN_SZ + list_item_height * 2, list_item_width, list_item_height, lang(VPI_LANG_TV_AS_BLOW), NULL, VUI_BUTTON_STYLE_LIST, layer, vpi_menu_toggle_tv_as_blow, 0);
+    vui_button_update_checkable(vui, tv_blow_button, 1);
+    vui_button_update_checked(vui, tv_blow_button, vpi_config.tv_as_blow);
+
+    int keyboard_bind_button = vui_button_create(vui, BTN_SZ, BTN_SZ + list_item_height * 3, list_item_width, list_item_height, lang(VPI_LANG_KEYBOARD_CONTROLS), NULL, VUI_BUTTON_STYLE_LIST, layer, transition_to_keybinds, (void *)(intptr_t)layer);
 
     // Back button
     vpi_menu_create_back_button(vui, layer, return_to_settings, (void *) (intptr_t) layer);

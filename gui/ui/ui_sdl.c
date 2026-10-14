@@ -49,6 +49,7 @@
 #include "menu/menu.h"
 #include "menu/menu_game.h"
 #include "platform.h"
+#include "ui_blow.h"
 #include "ui_priv.h"
 #include "ui_util.h"
 
@@ -99,6 +100,16 @@ typedef struct {
     SDL_AudioDeviceID audio;
     SDL_AudioDeviceID mic;
     SDL_AudioStream *mic_resampler;
+
+    // "Blow into the mic" support (see ui_blow.h). `blow` is only ever touched
+    // by whichever single thread is producing microphone audio: the SDL audio
+    // thread if there's a real mic, or the synthetic mic thread otherwise.
+    vui_blow_t blow;
+    _Atomic int blow_pressed;
+    SDL_Thread *synth_mic_thread;
+    _Atomic int synth_mic_run;
+    _Atomic int synth_mic_enabled; // Whether the console currently wants mic audio
+
     SDL_GameController *controller;
     SDL_GameController *controller_gyros;
     SDL_Texture *game_tex;
@@ -509,6 +520,12 @@ void audio_callback(void *userdata, Uint8 *stream, int len)
     }
 }
 
+// Whether the "blow into the mic" button is currently held (and enabled)
+static int blow_is_active(vui_sdl_context_t *sdl_ctx)
+{
+	return vpi_config.tv_as_blow && atomic_load(&sdl_ctx->blow_pressed);
+}
+
 void mic_callback(void *userdata, Uint8 *stream, int len)
 {
 	vui_context_t *ctx = (vui_context_t *) userdata;
@@ -525,18 +542,72 @@ void mic_callback(void *userdata, Uint8 *stream, int len)
 		SDL_AudioStreamPut(sdl_ctx->mic_resampler, stream, len);
 		int avail;
 		while ((avail = SDL_AudioStreamAvailable(sdl_ctx->mic_resampler)) > 0) {
-			uint8_t buf[2048];
-			int chunk = avail < (int) sizeof(buf) ? avail : (int) sizeof(buf);
+			int16_t buf16[1024]; // int16_t so the samples are properly aligned
+			uint8_t *buf = (uint8_t *) buf16;
+			int chunk = avail < (int) sizeof(buf16) ? avail : (int) sizeof(buf16);
 			int got = SDL_AudioStreamGet(sdl_ctx->mic_resampler, buf, chunk);
 			if (got > 0) {
+				vui_blow_mix(&sdl_ctx->blow, buf16, got / sizeof(int16_t), blow_is_active(sdl_ctx), 16000);
 				ctx->mic_callback(ctx->mic_callback_data, buf, got);
 			} else {
 				break;
 			}
 		}
 	} else {
+		vui_blow_mix(&sdl_ctx->blow, (int16_t *) stream, len / sizeof(int16_t), blow_is_active(sdl_ctx), 48000);
 		ctx->mic_callback(ctx->mic_callback_data, stream, len);
 	}
+}
+
+// Devices without a microphone (e.g. the Nintendo Switch) never get a real
+// capture device, so there's nothing to tell us when the console wants mic
+// audio. This stands in for the mic: when the console enables it, we send
+// silence in the same 512-byte, 16kHz mono chunks a real GamePad would, with
+// breath noise mixed in while the blow button is held.
+//
+// It only does anything if the "blow into mic" setting is on, so with the
+// setting off the behavior is the same as before (nothing is sent).
+void vui_sdl_synth_mic_set_enabled(vui_context_t *ctx, int enabled, void *userdata)
+{
+	vui_sdl_context_t *sdl_ctx = (vui_sdl_context_t *) userdata;
+
+	atomic_store(&sdl_ctx->synth_mic_enabled, enabled);
+}
+
+static int synth_mic_thread(void *data)
+{
+	vui_context_t *ctx = (vui_context_t *) data;
+	vui_sdl_context_t *sdl_ctx = (vui_sdl_context_t *) ctx->platform_data;
+
+	// 256 samples at 16kHz is 16ms of audio (512 bytes). We deliberately tick
+	// a touch slower than that: the library paces its own sending at 16ms, so
+	// producing slightly slower keeps its queue from filling up, which would
+	// otherwise add a lot of delay between pressing the button and the console
+	// hearing it.
+	const Uint32 INTERVAL_MS = 17;
+	int16_t buf[256];
+
+	Uint32 next = SDL_GetTicks();
+	while (atomic_load(&sdl_ctx->synth_mic_run)) {
+		next += INTERVAL_MS;
+		Sint32 wait = (Sint32) (next - SDL_GetTicks());
+		if (wait > 0) {
+			SDL_Delay((Uint32) wait);
+		} else if (wait < -100) {
+			// We fell far behind (e.g. system was busy), so don't burst to catch up
+			next = SDL_GetTicks();
+		}
+
+		if (!atomic_load(&sdl_ctx->synth_mic_enabled) || !vpi_config.tv_as_blow || !ctx->mic_callback) {
+			continue;
+		}
+
+		memset(buf, 0, sizeof(buf));
+		vui_blow_mix(&sdl_ctx->blow, buf, sizeof(buf) / sizeof(buf[0]), blow_is_active(sdl_ctx), 16000);
+		ctx->mic_callback(ctx->mic_callback_data, (const uint8_t *) buf, sizeof(buf));
+	}
+
+	return 0;
 }
 
 int vui_sdl_event_thread(void *data)
@@ -638,6 +709,8 @@ int vui_sdl_event_thread(void *data)
                         SDL_GameControllerClose(sdl_ctx->controller_gyros);
                         sdl_ctx->controller_gyros = NULL;
                     }
+                    // Don't leave "blowing" stuck on if the button's release is never seen
+                    atomic_store(&sdl_ctx->blow_pressed, 0);
                     find_valid_controller(sdl_ctx);
                 }
                 break;
@@ -658,6 +731,10 @@ int vui_sdl_event_thread(void *data)
                             if (ev.cbutton.state == SDL_PRESSED) {
                                 vpi_menu_action(vui, (vpi_extra_action_t) vanilla_btn);
                             }
+                        } else if (vanilla_btn == VANILLA_BTN_TV && vpi_config.tv_as_blow) {
+                            // The TV button (the Switch's capture button by default) is
+                            // acting as a "blow into the mic" button instead
+                            atomic_store(&sdl_ctx->blow_pressed, ev.cbutton.state == SDL_PRESSED);
                         } else {
                             // Handle A/B and X/Y swaps (independently configurable, since some
                             // controllers such as the Switch Lite's built-in gamepad only have
@@ -750,6 +827,9 @@ int vui_sdl_event_thread(void *data)
                     if (vanilla_btn > VPI_ACTION_START_INDEX) {
                         if (ev.type == SDL_KEYDOWN)
                             vpi_menu_action(vui, (vpi_extra_action_t) vanilla_btn);
+                    } else if (vanilla_btn == VANILLA_BTN_TV && vpi_config.tv_as_blow) {
+                        // Same as the controller path: TV acts as "blow into the mic"
+                        atomic_store(&sdl_ctx->blow_pressed, ev.type == SDL_KEYDOWN);
                     } else if (vanilla_btn != -1) {
                         if (vui->game_mode) {
                             vanilla_set_button(vanilla_btn, ev.type == SDL_KEYDOWN ? INT16_MAX : 0);
@@ -960,6 +1040,8 @@ int vui_init_sdl(vui_context_t *ctx, int fullscreen)
     // reconfigure the codec/I2S rate on capture open, which then breaks any
     // playback stream that was running at a different rate. We resample to
     // 16kHz in software in mic_callback before forwarding to the Wii U.
+    vui_blow_init(&sdl_ctx->blow);
+
     SDL_AudioSpec mic_desired = {0};
     mic_desired.freq = 48000;
     mic_desired.format = AUDIO_S16LSB;
@@ -978,6 +1060,17 @@ int vui_init_sdl(vui_context_t *ctx, int fullscreen)
 		ctx->mic_enabled_handler_data = sdl_ctx;
 	} else {
 		vpilog("Failed to open microphone device\n");
+
+		// No microphone (e.g. Nintendo Switch). Start a stand-in that can
+		// still feed the console "blowing" if the user enabled that.
+		ctx->mic_enabled_handler = vui_sdl_synth_mic_set_enabled;
+		ctx->mic_enabled_handler_data = sdl_ctx;
+		atomic_store(&sdl_ctx->synth_mic_run, 1);
+		sdl_ctx->synth_mic_thread = SDL_CreateThread(synth_mic_thread, "vanilla-synth-mic", ctx);
+		if (!sdl_ctx->synth_mic_thread) {
+			vpilog("Failed to start synthetic microphone thread: %s\n", SDL_GetError());
+			atomic_store(&sdl_ctx->synth_mic_run, 0);
+		}
 	}
 
     ctx->vibrate_handler = vui_sdl_vibrate_handler;
@@ -1080,6 +1173,12 @@ void vui_close_sdl(vui_context_t *ctx)
 
 	if (sdl_ctx->audio) {
 		SDL_CloseAudioDevice(sdl_ctx->audio);
+	}
+
+	if (sdl_ctx->synth_mic_thread) {
+		atomic_store(&sdl_ctx->synth_mic_run, 0);
+		SDL_WaitThread(sdl_ctx->synth_mic_thread, NULL);
+		sdl_ctx->synth_mic_thread = NULL;
 	}
 
 	if (sdl_ctx->mic) {

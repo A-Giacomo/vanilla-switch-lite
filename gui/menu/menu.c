@@ -8,6 +8,7 @@
 #include <vanilla.h>
 
 #include "config.h"
+#include "lang.h"
 #include "menu_common.h"
 #include "menu_game.h"
 #include "menu_main.h"
@@ -17,12 +18,37 @@
 #include <pthread.h>
 #include <string.h>
 
-// Calling system() is synchronous and causes a noticeable pause during
+// Running the helper is synchronous and causes a noticeable pause during
 // gameplay. This allows us to thunk from a separate detached thread so it
 // doesn't interrupt the main thread.
+//
+// The helper prints the resulting volume as a percentage on its output, which
+// we show on screen as a pop-up. If it prints nothing (e.g. the mixer control
+// doesn't exist on this device), the volume is still changed, just silently.
 static void *run_volume_helper(void *command)
 {
-    (void) system((const char *) command);
+    FILE *pipe = popen((const char *) command, "r");
+    if (!pipe) {
+        return NULL;
+    }
+
+    int percent = -1;
+    char line[64];
+    if (fgets(line, sizeof(line), pipe)) {
+        char *end = NULL;
+        long value = strtol(line, &end, 10);
+        if (end != line && value >= 0 && value <= 100) {
+            percent = (int) value;
+        }
+    }
+    pclose(pipe);
+
+    if (percent >= 0) {
+        char message[64];
+        snprintf(message, sizeof(message), lang(VPI_LANG_VOLUME), percent);
+        vpi_show_toast(message);
+    }
+
     return NULL;
 }
 #endif

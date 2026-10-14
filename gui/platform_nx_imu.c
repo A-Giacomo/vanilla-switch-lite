@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <iio.h>
@@ -16,6 +17,7 @@
 
 #include "ui/ui_util.h"
 #include "platform.h"
+#include "platform_nx_imu_filter.h"
 
 // Reads accelerometer and gyroscope from the Switch's onboard IMU using
 // libiio's buffer interface. The raw attribute reads appear broken for
@@ -39,6 +41,16 @@ static sensor_t s_gyro;
 
 static pthread_t s_thread;
 static atomic_int s_run = 0;
+
+// Smooths out the sensor's jitter before it's sent to the console
+static nx_gyro_filter_t s_gyro_filter;
+
+static double monotonic_seconds(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double) ts.tv_sec + (double) ts.tv_nsec * 1e-9;
+}
 
 static int parse_mount_matrix(const char *s, float out[3][3])
 {
@@ -232,6 +244,8 @@ static void *imu_thread(void *arg)
 {
     (void)arg;
 
+    double last_gyro_time = 0.0;
+
     while (atomic_load(&s_run)) {
         float a[3] = {0, 0, 0};
         float g[3] = {0, 0, 0};
@@ -246,6 +260,11 @@ static void *imu_thread(void *arg)
         if (ok && s_gyro.valid) {
             if (read_sensor(&s_gyro, g) < 0) {
                 ok = 0;
+            } else {
+                double now = monotonic_seconds();
+                float dt = last_gyro_time > 0.0 ? (float) (now - last_gyro_time) : 0.005f;
+                last_gyro_time = now;
+                nx_gyro_filter_apply(&s_gyro_filter, g, dt);
             }
         }
 
@@ -288,6 +307,8 @@ int vpi_nx_imu_init(void)
     }
 
     vpilog("nx-imu: sensors ready (accel=%d gyro=%d)\n", s_accel.valid, s_gyro.valid);
+
+    nx_gyro_filter_reset(&s_gyro_filter);
 
     atomic_store(&s_run, 1);
     if (pthread_create(&s_thread, NULL, imu_thread, NULL) != 0) {

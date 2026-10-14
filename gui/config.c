@@ -87,6 +87,9 @@ void vpi_config_save()
     sprintf(buf, "%i", vpi_config.swap_xy);
     xmlTextWriterWriteElement(writer, BAD_CAST "swapxy", BAD_CAST buf);
 
+    sprintf(buf, "%i", vpi_config.tv_as_blow);
+    xmlTextWriterWriteElement(writer, BAD_CAST "tvasblow", BAD_CAST buf);
+
     sprintf(buf, "%i", vpi_config.fullscreen);
     xmlTextWriterWriteElement(writer, BAD_CAST "fullscreen", BAD_CAST buf);
 
@@ -256,6 +259,8 @@ void vpi_config_init()
                         vpi_config.swap_ab = atoi((const char *) child->children->content);
                     } else if (!strcmp((const char *) child->name, "swapxy")) {
                         vpi_config.swap_xy = atoi((const char *) child->children->content);
+                    } else if (!strcmp((const char *) child->name, "tvasblow")) {
+                        vpi_config.tv_as_blow = atoi((const char *) child->children->content);
                     } else if (!strcmp((const char *) child->name, "fastdrm")) {
                         vpi_config.fast_drm = atoi((const char *) child->children->content);
                     } else if (!strcmp((const char *) child->name, "fullscreen")) {

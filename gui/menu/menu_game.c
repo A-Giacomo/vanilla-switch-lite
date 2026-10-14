@@ -36,6 +36,9 @@
 #include <linux/videodev2.h>
 #endif
 
+// Toasts can be raised from helper threads (e.g. the volume pop-up) while the
+// render thread reads them, so access is guarded.
+static pthread_mutex_t vpi_toast_mutex = PTHREAD_MUTEX_INITIALIZER;
 static char vpi_toast_string[VPI_TOAST_MAX_LEN];
 static struct timeval vpi_toast_expiry;
 static int vpi_toast_number = 0;
@@ -1242,6 +1245,8 @@ void vpi_menu_game(vui_context_t *vui, void *v)
 
 void vpi_show_toast(const char *message)
 {
+    pthread_mutex_lock(&vpi_toast_mutex);
+
     vui_strncpy(vpi_toast_string, message, sizeof(vpi_toast_string));
 
     gettimeofday(&vpi_toast_expiry, 0);
@@ -1250,10 +1255,14 @@ void vpi_show_toast(const char *message)
     vpi_toast_expiry.tv_sec += 2;
 
     vpi_toast_number++;
+
+    pthread_mutex_unlock(&vpi_toast_mutex);
 }
 
 void vpi_get_toast(int *number, char *output, size_t output_size, struct timeval *expiry_time)
 {
+    pthread_mutex_lock(&vpi_toast_mutex);
+
     if (number)
         *number = vpi_toast_number;
 
@@ -1264,6 +1273,8 @@ void vpi_get_toast(int *number, char *output, size_t output_size, struct timeval
     if (expiry_time) {
         *expiry_time = vpi_toast_expiry;
     }
+
+    pthread_mutex_unlock(&vpi_toast_mutex);
 }
 
 void vpi_decode_send_audio(const void *data, size_t size)

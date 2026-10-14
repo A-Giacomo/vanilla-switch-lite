@@ -1,5 +1,7 @@
 #include "menu_settings.h"
 
+#include <math.h>
+#include <stdio.h>
 #include <vanilla.h>
 #include <unistd.h>
 
@@ -118,6 +120,50 @@ static void toggle_hwdec(vui_context_t *vui, int button, void *v)
     vui_button_update_checked(vui, button, !vpi_config.force_software_decode);
 }
 
+#ifdef VANILLA_DRM_KMS_AVAILABLE
+static void toggle_fast_drm(vui_context_t *vui, int button, void *v)
+{
+    // Takes effect the next time a console connection is started
+    vpi_config.fast_drm = !vpi_config.fast_drm;
+    vpi_config_save();
+    vui_button_update_checked(vui, button, vpi_config.fast_drm);
+}
+#endif
+
+// Devices where Vanilla controls the screen brightness itself (see main.c)
+#if !defined(VANILLA_GUI_ENABLE_WINDOWED) && !defined(ANDROID) && (!defined(TARGET_OS_IOS) || TARGET_OS_IOS == 0)
+#define VANILLA_HAS_BRIGHTNESS_SETTING
+
+static void format_brightness_text(char *buf, size_t size)
+{
+    snprintf(buf, size, lang(VPI_LANG_BRIGHTNESS), (int) lroundf(vpi_config.screen_brightness * 100.0f));
+}
+
+static void cycle_brightness(vui_context_t *vui, int button, void *v)
+{
+    // Steps match the ones the console itself uses. The lowest step is 25% so
+    // the screen can never be turned fully black from this menu.
+    static const float LEVELS[] = {0.25f, 0.50f, 0.75f, 1.00f};
+    const size_t LEVEL_COUNT = sizeof(LEVELS) / sizeof(LEVELS[0]);
+
+    float next = LEVELS[0];
+    for (size_t i = 0; i < LEVEL_COUNT; i++) {
+        if (LEVELS[i] > vpi_config.screen_brightness + 0.01f) {
+            next = LEVELS[i];
+            break;
+        }
+    }
+
+    vpi_config.screen_brightness = next;
+    vpi_config_save();
+    vui_brightness_set(vui, next);
+
+    char text[64];
+    format_brightness_text(text, sizeof(text));
+    vui_button_update_text(vui, button, text);
+}
+#endif
+
 void vpi_menu_settings(vui_context_t *vui, void *v)
 {
     vui_reset(vui);
@@ -128,7 +174,7 @@ void vpi_menu_settings(vui_context_t *vui, void *v)
     vui_get_screen_size(vui, &scrw, &scrh);
 
     // Set up settings menu
-    #define SETTINGS_COUNT 10
+    #define SETTINGS_COUNT 12
     int SETTINGS_NAMES[SETTINGS_COUNT];
     vui_button_callback_t SETTINGS_ACTION[SETTINGS_COUNT];
     int buttons[SETTINGS_COUNT];
@@ -193,6 +239,20 @@ void vpi_menu_settings(vui_context_t *vui, void *v)
     sc++;
 #endif
 
+#ifdef VANILLA_DRM_KMS_AVAILABLE
+    int FAST_DRM_SETTING = sc;
+    SETTINGS_NAMES[sc] = VPI_LANG_FAST_DRM;
+    SETTINGS_ACTION[sc] = toggle_fast_drm;
+    sc++;
+#endif
+
+#ifdef VANILLA_HAS_BRIGHTNESS_SETTING
+    int BRIGHTNESS_SETTING = sc;
+    SETTINGS_NAMES[sc] = VPI_LANG_BRIGHTNESS;
+    SETTINGS_ACTION[sc] = cycle_brightness;
+    sc++;
+#endif
+
     // Back button
     vpi_menu_create_back_button(vui, fglayer, return_to_main, (void *) (intptr_t) fglayer);
 
@@ -227,6 +287,18 @@ void vpi_menu_settings(vui_context_t *vui, void *v)
     vui_button_update_checkable(vui, buttons[HWDEC_SETTING], 1);
     vui_button_update_checked(vui, buttons[HWDEC_SETTING], !vpi_config.force_software_decode);
 #endif // VANILLA_HAS_HWDEC
+
+#ifdef VANILLA_DRM_KMS_AVAILABLE
+    vui_button_update_checkable(vui, buttons[FAST_DRM_SETTING], 1);
+    vui_button_update_checked(vui, buttons[FAST_DRM_SETTING], vpi_config.fast_drm);
+#endif
+
+#ifdef VANILLA_HAS_BRIGHTNESS_SETTING
+    // The label shows the current level, so it can't just be the lang string
+    char brightness_text[64];
+    format_brightness_text(brightness_text, sizeof(brightness_text));
+    vui_button_update_text(vui, buttons[BRIGHTNESS_SETTING], brightness_text);
+#endif
 
     vui_transition_fade_layer_in(vui, fglayer, 0, 0);
 }
